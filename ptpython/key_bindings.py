@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import sys
+=======
+import re
+>>>>>>> ffd444b... implement auto_match brackets and quotes based on randy3k/radian/
 
 from prompt_toolkit.application import get_app
 from prompt_toolkit.document import Document
@@ -205,7 +209,6 @@ def load_python_bindings(python_input):
         event.app.exit(exception=KeyboardInterrupt, style="class:aborting")
 
 
-
     def get_input_mode(self):
         if sys.version_info[0] == 3:
             app = get_app()
@@ -232,6 +235,119 @@ def load_python_bindings(python_input):
     if python_input.enable_modal_cursor:
         ViState._input_mode = InputMode.INSERT
         ViState.input_mode = property(get_input_mode, set_input_mode)
+
+    _preceding_text_cache = {}
+    _following_text_cache = {}
+
+    def preceding_text(pattern):
+        try:
+            return _preceding_text_cache[pattern]
+        except KeyError:
+            pass
+        m = re.compile(pattern)
+
+        def _preceding_text():
+            app = get_app()
+            return bool(m.match(app.current_buffer.document.current_line_before_cursor))
+
+        condition = Condition(_preceding_text)
+        _preceding_text_cache[pattern] = condition
+        return condition
+
+
+    def following_text(pattern):
+        try:
+            return _following_text_cache[pattern]
+        except KeyError:
+            pass
+        m = re.compile(pattern)
+
+        def _following_text():
+            app = get_app()
+            return bool(m.match(app.current_buffer.document.current_line_after_cursor))
+
+        condition = Condition(_following_text)
+        _following_text_cache[pattern] = condition
+        return condition
+
+    focused_insert = (vi_insert_mode | emacs_insert_mode) & has_focus(DEFAULT_BUFFER)
+
+    # auto match
+    @handle('(', filter=focused_insert & following_text(r"[,)}\]]|$"))
+    def _(event):
+        event.current_buffer.insert_text("()")
+        event.current_buffer.cursor_left()
+
+    @handle('[', filter=focused_insert & following_text(r"[,)}\]]|$"))
+    def _(event):
+        event.current_buffer.insert_text("[]")
+        event.current_buffer.cursor_left()
+
+    @handle('{', filter=focused_insert & following_text(r"[,)}\]]|$"))
+    def _(event):
+        event.current_buffer.insert_text("{}")
+        event.current_buffer.cursor_left()
+
+    @handle('"', filter=focused_insert & following_text(r"[,)}\]]|$"))
+    def _(event):
+        event.current_buffer.insert_text('""')
+        event.current_buffer.cursor_left()
+
+    @handle("'", filter=focused_insert & following_text(r"[,)}\]]|$"))
+    def _(event):
+        event.current_buffer.insert_text("''")
+        event.current_buffer.cursor_left()
+
+    # raw string
+    @handle('(', filter=focused_insert & preceding_text(r".*(r|R)[\"'](-*)$"))
+    def _(event):
+        matches = re.match(r".*(r|R)[\"'](-*)", event.current_buffer.document.current_line_before_cursor)
+        dashes = matches.group(2) or ""
+        event.current_buffer.insert_text("()" + dashes)
+        event.current_buffer.cursor_left(len(dashes) + 1)
+
+    @handle('[', filter=focused_insert & preceding_text(r".*(r|R)[\"'](-*)$"))
+    def _(event):
+        matches = re.match(r".*(r|R)[\"'](-*)", event.current_buffer.document.current_line_before_cursor)
+        dashes = matches.group(2) or ""
+        event.current_buffer.insert_text("[]" + dashes)
+        event.current_buffer.cursor_left(len(dashes) + 1)
+
+    @handle('{', filter=focused_insert & preceding_text(r".*(r|R)[\"'](-*)$"))
+    def _(event):
+        matches = re.match(r".*(r|R)[\"'](-*)", event.current_buffer.document.current_line_before_cursor)
+        dashes = matches.group(2) or ""
+        event.current_buffer.insert_text("{}" + dashes)
+        event.current_buffer.cursor_left(len(dashes) + 1)
+
+    @handle('"', filter=focused_insert & preceding_text(r".*(r|R)$"))
+    def _(event):
+        event.current_buffer.insert_text('""')
+        event.current_buffer.cursor_left()
+
+    @handle("'", filter=focused_insert & preceding_text(r".*(r|R)$"))
+    def _(event):
+        event.current_buffer.insert_text("''")
+        event.current_buffer.cursor_left()
+
+    # just move cursor
+    @handle(')', filter=focused_insert & following_text(r"^\)"))
+    @handle(']', filter=focused_insert & following_text(r"^\]"))
+    @handle('}', filter=focused_insert & following_text(r"^\}"))
+    @handle('"', filter=focused_insert & following_text("^\""))
+    @handle("'", filter=focused_insert & following_text("^'"))
+    def _(event):
+        event.current_buffer.cursor_right()
+
+    @handle('backspace', filter=focused_insert & preceding_text(r".*\($") & following_text(r"^\)"))
+    @handle('backspace', filter=focused_insert & preceding_text(r".*\[$") & following_text(r"^\]"))
+    @handle('backspace', filter=focused_insert & preceding_text(r".*\{$") & following_text(r"^\}"))
+    @handle('backspace', filter=focused_insert & preceding_text('.*"$') & following_text('^"'))
+    @handle('backspace', filter=focused_insert & preceding_text(r".*'$") & following_text(r"^'"))
+    def _(event):
+        event.current_buffer.delete()
+        event.current_buffer.delete_before_cursor()
+
 
     return bindings
 
