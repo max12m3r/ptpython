@@ -237,6 +237,7 @@ class PythonInput:
         self.enable_modal_cursor: bool = True
         self.ttimeoutlen: float = 0.01
         self.timeoutlen: float = 0.5
+        self.emacs_bindings_in_vi_insert_mode: bool = True
         self.enable_mouse_support: bool = False
         self.enable_history_search: bool = False  # When True, like readline, going
         # back in history will filter the
